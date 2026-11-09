@@ -13,10 +13,85 @@ function confirmation() { return { ...stats({ forgetmenot: 1 }), choice: payload
 
 test('name variants match while departments remain separate identities', () => {
   assert.equal(vote.normalizeIdentity('  ＤＫ   Team  ', ' 王 小明 '), vote.normalizeIdentity('dk team', '王小明'));
+  assert.equal(vote.normalizeIdentity('電\u200B商 營運部', '王\u202A小 明\u2060'), vote.normalizeIdentity('電商營運部', '王小明'));
   assert.notEqual(vote.normalizeIdentity('營運', '王小明'), vote.normalizeIdentity('門市', '王小明'));
   assert.match(vote.validateIdentity('', '王小明'), /部門/);
   assert.match(vote.validateIdentity('營運', 'A\nB'), /換行/);
   assert.match(vote.validateIdentity('A'.repeat(41), '王小明'), /40/);
+});
+
+function mountHarness(savedReceipt, fetcher) {
+  const nodes = new Map();
+  function node() {
+    const result = { value: '', className: '', handlers: {}, focus() {}, reportValidity() { return true; }, addEventListener(type, handler) { this.handlers[type] = handler; } };
+    result.classList = { contains: name => result.className.split(' ').includes(name), toggle(name, active) { const names = new Set(result.className.split(' ').filter(Boolean)); active ? names.add(name) : names.delete(name); result.className = [...names].join(' '); } };
+    return result;
+  }
+  const get = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
+  const radios = vote.IDS.map(value => {
+    const radio = node(), card = node(), children = new Map();
+    radio.value = value;
+    radio.closest = () => card;
+    card.querySelector = selector => { if (!children.has(selector)) children.set(selector, node()); return children.get(selector); };
+    return radio;
+  });
+  const storage = values => ({ getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value) });
+  const saved = new Map();
+  if (savedReceipt) saved.set('dk-flower-vote:' + vote.POLL_ID + ':receipt-v1', JSON.stringify(savedReceipt));
+  const document = { getElementById: get, querySelectorAll: () => radios, body: node(), defaultView: { crypto: webcrypto, localStorage: storage(saved), sessionStorage: storage(new Map()), fetch: fetcher } };
+  vote.mount(document, { pollId: vote.POLL_ID, endpoint: 'https://example.com/vote' });
+  return { get, radios, submit: () => get('vote-form').handlers.submit({ preventDefault() {} }) };
+}
+
+test('new-tab identity typo stays editable and only a verified correction is locked', async () => {
+  const digest = await vote.identityDigest(webcrypto, vote.normalizeIdentity('電商營運部', '王小明'));
+  let sent = 0, ui;
+  ui = mountHarness({ token: 'a'.repeat(64), revision: 1, choice: 'forgetmenot', identityDigest: digest }, async (url, options) => {
+    sent++;
+    assert.equal(ui.get('department').disabled, true);
+    assert.equal(ui.get('voter-name').disabled, true);
+    const body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ ...stats({ forgetmenot: 1 }), choice: body.choice, requestId: body.requestId, revision: 2 }) };
+  });
+  ui.get('department').value = '電商營運部';
+  ui.get('voter-name').value = '錯誤姓名';
+  await ui.submit();
+  assert.equal(sent, 0);
+  assert.match(ui.get('vote-status').textContent, /原本填寫的身分/);
+  assert.equal(ui.get('department').readOnly, false);
+  assert.equal(ui.get('voter-name').readOnly, false);
+  assert.equal(ui.get('voter-name').disabled, false);
+  ui.get('department').value = '電商 營運部';
+  ui.get('voter-name').value = '王\u200B小 明';
+  await ui.submit();
+  assert.equal(sent, 1);
+  assert.equal(ui.get('department').readOnly, true);
+  assert.equal(ui.get('voter-name').readOnly, true);
+});
+
+test('an uncertain request cannot be replayed under changed identity and preserves its exact payload', async () => {
+  const sent = [];
+  const ui = mountHarness(null, async (url, options) => {
+    sent.push(options.body);
+    if (sent.length === 1) throw new TypeError('offline after send');
+    const body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ ...stats({ sakura: 1 }), choice: body.choice, requestId: body.requestId, revision: 1 }) };
+  });
+  ui.get('department').value = '電商營運部';
+  ui.get('voter-name').value = '王小明';
+  ui.radios[0].handlers.change();
+  await ui.submit();
+  assert.equal(ui.get('voter-name').readOnly, true);
+  ui.get('voter-name').value = '另一位同事';
+  ui.get('voter-name').handlers.input();
+  await ui.submit();
+  assert.equal(sent.length, 1);
+  assert.equal(ui.get('voter-name').readOnly, false);
+  ui.get('voter-name').value = '王 小 明';
+  await ui.submit();
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1], sent[0]);
+  assert.match(ui.get('vote-status').textContent, /你的票已收到/);
 });
 
 test('receipt stores no clear-text identity and rejects unusable credentials', () => {

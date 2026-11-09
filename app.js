@@ -47,8 +47,12 @@
   }
 
   function normalizeIdentity(dept, name) {
-    const normalize = value => String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
-    return normalize(dept) + '\n' + normalize(name).replace(/\s/g, '');
+    const normalize = value => String(value || '').normalize('NFKC').replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, '').replace(/\s/g, '').toLowerCase();
+    return normalize(dept) + '\n' + normalize(name);
+  }
+
+  function canLockIdentity(receipt, dept, name, verifiedIdentity) {
+    return Boolean(receipt && receipt.identityDigest && (receipt.revision > 0 || receipt.pending) && verifiedIdentity && verifiedIdentity.digest === receipt.identityDigest && verifiedIdentity.normalized === normalizeIdentity(dept, name));
   }
 
   function validateIdentity(dept, name) {
@@ -149,6 +153,7 @@
     const results = $('results-disclosure');
     let receipt = null;
     let pendingPayload = null;
+    let verifiedIdentity = null;
     let selected = null;
     let busy = false;
     let closed = false;
@@ -213,9 +218,9 @@
     function updateControls() {
       const unresolved = Boolean(receipt && receipt.pending);
       radios.forEach(radio => { radio.disabled = busy || unresolved || closed; });
-      const haveSavedIdentity = Boolean(receipt && (receipt.revision > 0 || unresolved) && deptInput.value.trim() && nameInput.value.trim());
-      deptInput.readOnly = haveSavedIdentity;
-      nameInput.readOnly = haveSavedIdentity;
+      const identityVerified = canLockIdentity(receipt, deptInput.value, nameInput.value, verifiedIdentity);
+      deptInput.readOnly = identityVerified;
+      nameInput.readOnly = identityVerified;
       deptInput.disabled = busy;
       nameInput.disabled = busy;
       submit.disabled = busy || closed || !isConfigured(endpoint);
@@ -263,8 +268,18 @@
       if (invalid) throw new VoteError(invalid, 'BAD_IDENTITY', false);
       if (!selected) throw new VoteError('請先選擇一款花意配色。', 'BAD_CHOICE', false);
       if (!win.crypto || !win.crypto.subtle || !win.crypto.getRandomValues) throw new VoteError('此瀏覽器無法建立投票憑證，請使用最新版 Chrome、Edge 或 Safari。', 'CRYPTO', false);
-      const digest = await identityDigest(win.crypto, normalizeIdentity(dept, name));
+      const normalized = normalizeIdentity(dept, name);
+      verifiedIdentity = null;
+      const digest = await identityDigest(win.crypto, normalized);
       if (receipt && receipt.identityDigest && receipt.identityDigest !== digest) throw new VoteError('此瀏覽器已保留另一份部門與姓名的投票憑證。請使用原本填寫的身分，或聯絡票選負責人。', 'IDENTITY_MISMATCH', false);
+      if (pendingPayload && normalizeIdentity(pendingPayload.dept, pendingPayload.name) !== normalized) throw new VoteError('上一份請求尚待確認，請填回原本的部門與姓名後重試。', 'IDENTITY_MISMATCH', false);
+      verifiedIdentity = { normalized, digest };
+      if (pendingPayload) {
+        // Retry exactly the already-sent envelope; never replace its identity or request ID.
+        deptInput.value = pendingPayload.dept;
+        nameInput.value = pendingPayload.name;
+        return pendingPayload;
+      }
       if (!receipt) receipt = { token: randomHex(win.crypto, 32), revision: 0, choice: null, identityDigest: null, pending: null };
       if (!receipt.pending) receipt.pending = { choice: selected, requestId: randomHex(win.crypto, 16), expectedRevision: receipt.revision };
       receipt.identityDigest = digest;
@@ -284,7 +299,7 @@
       showStatus('正在送出並等待確認，請稍候。', '', false);
       let payload;
       try {
-        payload = pendingPayload || await preparePayload();
+        payload = await preparePayload();
         pendingPayload = payload;
         updateControls();
         const data = await requestJSON(endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) }, win.fetch.bind(win), config.timeoutMs);
@@ -326,6 +341,10 @@
     radios.forEach(radio => radio.addEventListener('change', () => {
       applySelection(radio.value);
       if (status.classList.contains('is-success')) showStatus('已改選，按「更新我的選擇」才會更新票數。', '', false);
+    }));
+    [deptInput, nameInput].forEach(input => input.addEventListener('input', () => {
+      if (verifiedIdentity && verifiedIdentity.normalized !== normalizeIdentity(deptInput.value, nameInput.value)) verifiedIdentity = null;
+      updateControls();
     }));
     form.addEventListener('submit', submitVote);
     results.addEventListener('toggle', () => { if (results.open) loadStats(); });
@@ -369,5 +388,5 @@
     return { loadStats };
   }
 
-  return { POLL_ID, COLORS, SYMBOLISM, IDS, VoteError, normalizeIdentity, validateIdentity, normalizeStats, assertConfirmation, isConfigured, requestJSON, randomHex, identityDigest, parseReceipt, mount };
+  return { POLL_ID, COLORS, SYMBOLISM, IDS, VoteError, normalizeIdentity, canLockIdentity, validateIdentity, normalizeStats, assertConfirmation, isConfigured, requestJSON, randomHex, identityDigest, parseReceipt, mount };
 });
