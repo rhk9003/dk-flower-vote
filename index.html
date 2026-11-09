@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#213f35">
+  <meta name="description" content="89-6184-60 花意配色同事票選。六款花，六種心意，選出你最期待開發的下一雙 DK 空氣鞋。">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="把想說的話，繡成一朵花。｜DK 花意配色票選">
+  <meta property="og:description" content="六款花，六種心意。邀請 DK 同事選出最期待的花意配色。">
+  <meta property="og:image" content="https://rhk9003.github.io/dk-flower-vote/assets/forgetmenot.jpg">
+  <meta property="og:url" content="https://rhk9003.github.io/dk-flower-vote/">
+  <title>DK 花意配色｜89-6184-60 同事票選</title>
+  <link rel="canonical" href="https://rhk9003.github.io/dk-flower-vote/">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#collection">跳至配色提案</a>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="DK 花意選色室首頁"><span class="brand-mark">DK</span><span class="brand-label">花意選色室<small>COLOR STUDIO</small></span></a>
+    <a class="header-link" href="#ballot">同事票選 <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="top">
+    <section class="hero section-shell" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">89-6184-60 花意配色｜同事票選</p>
+        <h1 id="hero-title">把想說的話，<br>繡成一朵花。</h1>
+        <p class="hero-description">六款花，六種想帶在身上的心意。<br>從花的形狀到背後的故事，一起選出最期待開發的下一雙。</p>
+        <a class="primary-link" href="#collection">看六款花意提案 <span aria-hidden="true">↓</span></a>
+        <p class="hero-note">每位同事一票 · 請填部門與姓名</p>
+      </div>
+      <figure class="hero-visual">
+        <div class="hero-image-wrap"><img src="assets/forgetmenot.jpg" alt="相伴：霧藍鞋面與藍色勿忘我刺繡的設計示意" fetchpriority="high" width="1254" height="1254"></div>
+        <figcaption><span>02 / 相伴</span><span>把珍惜，放進每一步。</span></figcaption>
+      </figure>
+    </section>
+
+    <section id="collection" class="collection section-shell" aria-labelledby="collection-title">
+      <div class="section-intro">
+        <div><p class="section-number">01 — 六款花意</p><h2 id="collection-title">選一朵，陪你走。</h2></div>
+        <p>先看設計與心意，再投下你的一票。<br>點擊鞋圖，可放大看刺繡細節。</p>
+      </div>
+      <div id="color-grid" class="color-grid"></div>
+      <noscript><p class="notice">請開啟瀏覽器 JavaScript，以查看六款提案並完成投票。</p></noscript>
+      <p class="meaning-note">每款花都有自己的形狀與故事。下列文案為 DK 依植物特徵與文化意象延伸的設計寓意；花卉象徵會因地域與文獻而不同。</p>
+    </section>
+
+    <section id="ballot" class="ballot section-shell" aria-labelledby="ballot-title">
+      <div class="ballot-intro">
+        <p class="section-number">02 — 留下你的選擇</p>
+        <h2 id="ballot-title">你最希望<br>哪一款成真？</h2>
+        <p>這是內部開發意向票選。<br>一人一票，選出你最期待的花意配色。</p>
+        <ul class="vote-rules">
+          <li>請填寫完整部門及姓名。</li>
+          <li>可在原瀏覽器修改同一份投票。</li>
+          <li>姓名與部門供內部核對，頁面只顯示總票數。</li>
+        </ul>
+      </div>
+      <form id="vote-form" class="vote-form">
+        <div id="selection-summary" class="selection-summary" aria-live="polite"><span class="selection-kicker">你的選擇</span><strong>尚未選擇</strong><span>請先從上方六款提案中，選一款最喜歡的設計。</span></div>
+        <div class="identity-fields">
+          <div class="field"><label for="department">部門 <span>必填</span></label><input id="department" name="dept" type="text" maxlength="40" required autocomplete="organization-title" placeholder="例如：電商營運部" aria-describedby="identity-note"></div>
+          <div class="field"><label for="voter-name">姓名 <span>必填</span></label><input id="voter-name" name="name" type="text" maxlength="40" required autocomplete="name" placeholder="請填寫全名" aria-describedby="identity-note"></div>
+        </div>
+        <p id="identity-note" class="field-note">部門與姓名僅用於本次內部票選核對，不會顯示在公開結果。</p>
+        <p id="service-notice" class="service-notice" hidden></p>
+        <button id="submit-vote" class="submit-button" type="submit">送出我的一票 <span aria-hidden="true">↗</span></button>
+        <p id="vote-status" class="vote-status" role="status" aria-live="polite" tabindex="-1"></p>
+        <p id="receipt-note" class="field-note" hidden>此瀏覽器已保存修改憑證。清除瀏覽資料或換裝置後，請聯絡票選負責人協助修改。</p>
+      </form>
+    </section>
+
+    <section class="results-section section-shell" aria-label="票選結果">
+      <details id="results-disclosure" class="results-disclosure">
+        <summary><span>看看目前的票選結果</span><span aria-hidden="true">＋</span></summary>
+        <div class="results-content">
+          <div class="results-heading"><h2>每一票，都讓方向更清楚。</h2><button id="refresh-results" class="text-button" type="button">更新票數 <span aria-hidden="true">↻</span></button></div>
+          <p id="results-status" class="results-status" role="status" aria-live="polite">展開後讀取目前票數。</p>
+          <ol id="results-list" class="results-list" aria-label="各方案票數"></ol>
+          <p class="results-note">結果依提案順序呈現。票選提供開發參考，最終款式仍以後續評估及打樣為準。</p>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="site-footer section-shell"><div><span class="footer-brand">DK</span><p>把花的心意，走成日常。</p></div><p>89-6184-60 花意配色開發提案<br>AI 設計示意圖，實際鞋型細節、皮料及繡線色以打樣為準。</p></footer>
+
+  <dialog id="image-dialog" class="image-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-top"><h2 id="dialog-title"></h2><button id="close-dialog" type="button" class="dialog-close" aria-label="關閉大圖">×</button></div>
+    <img id="dialog-image" alt="" width="1254" height="1254">
+    <p id="dialog-caption"></p>
+  </dialog>
+</body>
+</html>
