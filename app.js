@@ -10,6 +10,7 @@
   'use strict';
 
   const POLL_ID = 'dk6184-flowers-20261109';
+  const MAX_CHOICES = 2;
   const COLORS = Object.freeze([
     { id: 'sakura', name: '初櫻', flower: '粉櫻', body: '乾燥玫瑰', swatch: '#D59AA0', meaning: '重新開始', story: '把重新開始的勇氣，繡成腳邊的一枝春天。', shape: '瓣端帶缺口的淡粉五瓣櫻花，搭配細長花梗與少量嫩葉。', culture: '櫻花在日本文化中與希望、更新相連。「重新開始的勇氣」是本款延伸的 DK 設計寓意。', sources: [{ title: 'JICC：櫻花文化', url: 'https://www.us.emb-japan.go.jp/jicc/doc/Teaching%20Tuesday/2016/03-22-16-sakura-history.pdf' }, { title: 'Kew：花形辨識', url: 'https://www.kew.org/read-and-watch/blossom-quiz' }] },
     { id: 'forgetmenot', name: '相伴', flower: '勿忘我', body: '霧藍', swatch: '#AFCAE2', meaning: '珍惜相伴', story: '把珍惜的人與時光，留在每天相伴的步伐裡。', shape: '小型藍色五裂花冠，中央一點黃眼，沿細莖成簇。', culture: 'RHS 的花卉象徵資料將勿忘我與真愛連結。本款將這份情感延伸為珍惜親友與相伴時光。', sources: [{ title: 'RHS：花卉象徵', url: 'https://www.rhs.org.uk/education-learning/school-gardening/resources/curriculum-linked/the-meaning-of-flowers' }, { title: 'RHS：勿忘我形態', url: 'https://www.rhs.org.uk/plants/41558/myosotis-sylvatica/details' }] },
@@ -27,13 +28,18 @@
     plum: { label: '文化象徵', text: '堅韌・傲霜耐雪' }
   });
   const IDS = COLORS.map(c => c.id);
+  const normalizeChoices = values => IDS.filter(id => values.includes(id));
+  function isValidChoices(values) {
+    return Array.isArray(values) && values.length >= 1 && values.length <= MAX_CHOICES && new Set(values).size === values.length && values.every(id => IDS.includes(id));
+  }
+  function sameChoices(a, b) { return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((id, index) => id === b[index]); }
   const ERROR_MESSAGES = Object.freeze({
     ALREADY_VOTED: '這個部門與姓名已有投票紀錄。若要改票，請使用原瀏覽器；需要協助請聯絡票選負責人。',
     STALE_REVISION: '已同步這份投票的最新紀錄。請確認目前選擇，再決定是否改票。',
     POLL_CLOSED: '本次票選已結束，感謝你的參與。',
     WRONG_POLL: '目前票選設定不一致，請重新整理頁面或聯絡票選負責人。',
     BAD_IDENTITY: '請確認部門與姓名皆已完整填寫。',
-    BAD_CHOICE: '請先選擇六款提案中的其中一款。',
+    BAD_CHOICE: '請從六款提案中選擇一到兩款。',
     BAD_RECEIPT: '此瀏覽器的修改憑證無法使用，請聯絡票選負責人。',
     BAD_REQUEST_ID: '送出識別資料無法使用，請重新整理頁面。',
     BAD_REVISION: '投票版本資料無法使用，請聯絡票選負責人。',
@@ -76,13 +82,13 @@
   }
 
   function assertConfirmation(data, payload) {
-    if (!data || data.ok !== true || (data.pollId && data.pollId !== payload.pollId) || data.requestId !== payload.requestId || data.choice !== payload.choice || !Number.isSafeInteger(data.revision) || data.revision < 1 || data.revision < payload.expectedRevision) {
-      throw new VoteError('尚未取得這一票的確認回覆。請按「重試確認這一票」，不會重複計票。', 'UNCONFIRMED', true);
+    if (!data || data.ok !== true || (data.pollId && data.pollId !== payload.pollId) || data.requestId !== payload.requestId || !sameChoices(data.choices, payload.choices) || !Number.isSafeInteger(data.revision) || data.revision < 1 || data.revision < payload.expectedRevision) {
+      throw new VoteError('尚未取得這次投票的確認回覆。請按「重試確認這次投票」，不會重複計票。', 'UNCONFIRMED', true);
     }
     let stats;
     try { stats = normalizeStats(data, payload.pollId); }
-    catch (_) { throw new VoteError('回覆資料尚未完整，請重試確認這一票。', 'UNCONFIRMED', true); }
-    return { choice: data.choice, revision: data.revision, requestId: data.requestId, stats };
+    catch (_) { throw new VoteError('回覆資料尚未完整，請重試確認這次投票。', 'UNCONFIRMED', true); }
+    return { choices: data.choices, revision: data.revision, requestId: data.requestId, stats };
   }
 
   function isConfigured(endpoint) {
@@ -123,15 +129,21 @@
     return Array.from(new Uint8Array(data), value => value.toString(16).padStart(2, '0')).join('');
   }
 
+  // Receipts saved before two-pick voting hold a single `choice`.
+  function receiptChoices(source) {
+    return source.choices !== undefined ? source.choices : (source.choice != null ? [source.choice] : []);
+  }
+
   function parseReceipt(raw) {
     try {
       const value = JSON.parse(raw);
       if (!value || !/^[a-f0-9]{64}$/.test(value.token) || !Number.isSafeInteger(value.revision) || value.revision < 0) return null;
       if (value.identityDigest != null && !/^[a-f0-9]{64}$/.test(value.identityDigest)) return null;
-      if (value.choice != null && !IDS.includes(value.choice)) return null;
+      const choices = receiptChoices(value);
+      if (!Array.isArray(choices) || (choices.length && !isValidChoices(choices))) return null;
       const pending = value.pending;
-      if (pending && (!/^[a-f0-9]{32}$/.test(pending.requestId) || !IDS.includes(pending.choice) || !Number.isSafeInteger(pending.expectedRevision) || pending.expectedRevision < 0)) return null;
-      return { token: value.token, revision: value.revision, choice: value.choice || null, identityDigest: value.identityDigest || null, pending: pending || null };
+      if (pending && (!/^[a-f0-9]{32}$/.test(pending.requestId) || !isValidChoices(receiptChoices(pending)) || !Number.isSafeInteger(pending.expectedRevision) || pending.expectedRevision < 0)) return null;
+      return { token: value.token, revision: value.revision, choices: normalizeChoices(choices), identityDigest: value.identityDigest || null, pending: pending ? { requestId: pending.requestId, choices: normalizeChoices(receiptChoices(pending)), expectedRevision: pending.expectedRevision } : null };
     } catch (_) { return null; }
   }
 
@@ -154,7 +166,7 @@
     let receipt = null;
     let pendingPayload = null;
     let verifiedIdentity = null;
-    let selected = null;
+    let selected = [];
     let busy = false;
     let closed = false;
     let statsLoading = false;
@@ -176,11 +188,11 @@
           <p class="symbolism"><span>${SYMBOLISM[c.id].label}</span><strong>${SYMBOLISM[c.id].text}</strong></p>
           <p class="meaning">DK 設計寓意<strong>${c.meaning}</strong></p><p class="card-story">${c.story}</p>
           <div class="card-bottom"><details class="story-source"><summary>花的故事與來源</summary><p>${c.shape}</p><p>${c.culture}</p><div class="source-links">${c.sources.map(source => `<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)} ↗</a>`).join('')}</div></details>
-          <label class="select-choice"><input type="radio" form="vote-form" name="choice" value="${c.id}" required aria-label="選擇${c.name}：${c.flower}與${c.body}"><span class="choice-label">選這款</span><span class="selection-icon" aria-hidden="true">＋</span></label></div>
+          <label class="select-choice"><input type="checkbox" form="vote-form" name="choice" value="${c.id}" aria-label="選擇${c.name}：${c.flower}與${c.body}"><span class="choice-label">選這款</span><span class="selection-icon" aria-hidden="true">＋</span></label></div>
         </div>
       </article>`).join('');
 
-    const radios = Array.from(document.querySelectorAll('input[name="choice"]'));
+    const choiceInputs = Array.from(document.querySelectorAll('input[name="choice"]'));
 
     function showStatus(message, kind, focus) {
       status.textContent = message;
@@ -200,35 +212,41 @@
       try { win.sessionStorage.setItem(sessionKey, JSON.stringify({ dept, name })); } catch (_) { /* Optional; receipt contains no name or department. */ }
     }
 
-    function applySelection(id) {
-      selected = IDS.includes(id) ? id : null;
-      radios.forEach(radio => {
-        const active = radio.value === selected;
-        radio.checked = active;
-        const card = radio.closest('.color-card');
+    function applySelection(ids) {
+      selected = normalizeChoices(ids).slice(0, MAX_CHOICES);
+      const full = selected.length >= MAX_CHOICES;
+      choiceInputs.forEach(input => {
+        const active = selected.includes(input.value);
+        input.checked = active;
+        const card = input.closest('.color-card');
         card.classList.toggle('is-selected', active);
-        card.querySelector('.choice-label').textContent = active ? '已選擇這款' : '選這款';
-        card.querySelector('.selection-icon').textContent = active ? '✓' : '＋';
+        card.querySelector('.choice-label').textContent = active ? '已選擇這款' : full ? '已選滿兩款' : '選這款';
+        card.querySelector('.selection-icon').textContent = active ? '✓' : full ? '' : '＋';
       });
-      const c = COLORS.find(item => item.id === selected);
-      $('selection-summary').innerHTML = c ? `<span class="selection-kicker">你的選擇</span><strong>${c.name} · ${c.meaning}</strong><span>${c.flower} × ${c.body}</span>` : '<span class="selection-kicker">你的選擇</span><strong>尚未選擇</strong><span>請先從上方六款提案中，選一款最喜歡的設計。</span>';
+      const picks = selected.map(id => COLORS.find(item => item.id === id));
+      const summary = !picks.length
+        ? ['尚未選擇', '請從上方六款提案中，選出最喜歡的一到兩款。']
+        : picks.length === 1
+          ? [`${picks[0].name} · ${picks[0].meaning}`, '還可以再選一款，或直接送出。']
+          : [picks.map(c => c.name).join('、'), '已選滿兩款。想換款，請先取消其中一款。'];
+      $('selection-summary').innerHTML = `<span class="selection-kicker">你的選擇${picks.length ? ` ${picks.length}／${MAX_CHOICES}` : ''}</span><strong>${summary[0]}</strong><span>${summary[1]}</span>`;
       updateControls();
     }
 
     function updateControls() {
       const unresolved = Boolean(receipt && receipt.pending);
-      radios.forEach(radio => { radio.disabled = busy || unresolved || closed; });
+      choiceInputs.forEach(input => { input.disabled = busy || unresolved || closed; });
       const identityVerified = canLockIdentity(receipt, deptInput.value, nameInput.value, verifiedIdentity);
       deptInput.readOnly = identityVerified;
       nameInput.readOnly = identityVerified;
       deptInput.disabled = busy;
       nameInput.disabled = busy;
       submit.disabled = busy || closed || !isConfigured(endpoint);
-      if (busy) submit.textContent = '正在確認這一票…';
+      if (busy) submit.textContent = '正在確認你的選擇…';
       else if (closed) submit.textContent = '本次票選已結束';
-      else if (unresolved) submit.textContent = '重試確認這一票 ↗';
+      else if (unresolved) submit.textContent = '重試確認這次投票 ↗';
       else if (receipt && receipt.revision > 0) submit.textContent = '更新我的選擇 ↗';
-      else submit.textContent = '送出我的一票 ↗';
+      else submit.textContent = '送出我的選擇 ↗';
       $('receipt-note').hidden = !(receipt && receipt.revision > 0);
     }
 
@@ -266,7 +284,7 @@
       const name = nameInput.value.trim();
       const invalid = validateIdentity(dept, name);
       if (invalid) throw new VoteError(invalid, 'BAD_IDENTITY', false);
-      if (!selected) throw new VoteError('請先選擇一款花意配色。', 'BAD_CHOICE', false);
+      if (!selected.length) throw new VoteError('請至少選擇一款花意配色。', 'BAD_CHOICE', false);
       if (!win.crypto || !win.crypto.subtle || !win.crypto.getRandomValues) throw new VoteError('此瀏覽器無法建立投票憑證，請使用最新版 Chrome、Edge 或 Safari。', 'CRYPTO', false);
       const normalized = normalizeIdentity(dept, name);
       verifiedIdentity = null;
@@ -280,13 +298,13 @@
         nameInput.value = pendingPayload.name;
         return pendingPayload;
       }
-      if (!receipt) receipt = { token: randomHex(win.crypto, 32), revision: 0, choice: null, identityDigest: null, pending: null };
-      if (!receipt.pending) receipt.pending = { choice: selected, requestId: randomHex(win.crypto, 16), expectedRevision: receipt.revision };
+      if (!receipt) receipt = { token: randomHex(win.crypto, 32), revision: 0, choices: [], identityDigest: null, pending: null };
+      if (!receipt.pending) receipt.pending = { choices: selected.slice(), requestId: randomHex(win.crypto, 16), expectedRevision: receipt.revision };
       receipt.identityDigest = digest;
       // Persist the token and same request ID before any network request. No names are stored here.
       saveReceipt();
       rememberIdentity(dept, name);
-      return { pollId, dept, name, choice: receipt.pending.choice, receiptToken: receipt.token, requestId: receipt.pending.requestId, expectedRevision: receipt.pending.expectedRevision };
+      return { pollId, dept, name, choices: receipt.pending.choices, receiptToken: receipt.token, requestId: receipt.pending.requestId, expectedRevision: receipt.pending.expectedRevision };
     }
 
     async function submitVote(event) {
@@ -304,13 +322,13 @@
         updateControls();
         const data = await requestJSON(endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) }, win.fetch.bind(win), config.timeoutMs);
         if (!data.ok) {
-          if (data.code === 'STALE_REVISION' && IDS.includes(data.choice) && Number.isSafeInteger(data.revision) && data.revision > 0) {
-            receipt.choice = data.choice;
+          if (data.code === 'STALE_REVISION' && isValidChoices(data.choices) && Number.isSafeInteger(data.revision) && data.revision > 0) {
+            receipt.choices = normalizeChoices(data.choices);
             receipt.revision = data.revision;
             receipt.pending = null;
             pendingPayload = null;
             saveReceipt();
-            applySelection(data.choice);
+            applySelection(receipt.choices);
           } else if (data.code !== 'BUSY') {
             receipt.pending = null;
             if (receipt.revision === 0) receipt.identityDigest = null;
@@ -322,24 +340,25 @@
         }
         const confirmed = assertConfirmation(data, payload);
         const updated = receipt.revision > 0;
-        receipt.choice = confirmed.choice;
+        receipt.choices = confirmed.choices;
         receipt.revision = confirmed.revision;
         receipt.pending = null;
         pendingPayload = null;
         let savedConfirmation = true;
         try { saveReceipt(); } catch (_) { savedConfirmation = false; }
-        applySelection(confirmed.choice);
+        applySelection(confirmed.choices);
         showStats(confirmed.stats);
-        const c = COLORS.find(item => item.id === confirmed.choice);
-        showStatus((updated ? '你的選擇已更新：' : '你的票已收到：') + c.name + '。謝謝你一起決定花意配色的下一步。' + (savedConfirmation ? '' : '但此瀏覽器未能保存最新修改紀錄；如需改票，請聯絡票選負責人。'), 'success', true);
+        const names = confirmed.choices.map(id => COLORS.find(item => item.id === id).name).join('、');
+        showStatus((updated ? '你的選擇已更新：' : '你的票已收到：') + names + '。謝謝你一起決定花意配色的下一步。' + (savedConfirmation ? '' : '但此瀏覽器未能保存最新修改紀錄；如需改票，請聯絡票選負責人。'), 'success', true);
       } catch (error) {
         if (!payload && receipt && receipt.revision === 0 && error.code === 'STORAGE') { receipt = null; pendingPayload = null; }
         showStatus(error.message || '尚未確認投票結果，請稍後重試。', 'error', true);
       } finally { busy = false; updateControls(); }
     }
 
-    radios.forEach(radio => radio.addEventListener('change', () => {
-      applySelection(radio.value);
+    choiceInputs.forEach(input => input.addEventListener('change', () => {
+      if (input.checked && selected.length >= MAX_CHOICES) { input.checked = false; return; }
+      applySelection(input.checked ? [...selected, input.value] : selected.filter(id => id !== input.value));
       if (status.classList.contains('is-success')) showStatus('已改選，按「更新我的選擇」才會更新票數。', '', false);
     }));
     [deptInput, nameInput].forEach(input => input.addEventListener('input', () => {
@@ -378,15 +397,15 @@
       $('service-notice').textContent = '票選尚未開放，現在可以先看六款設計提案。';
     }
     if (receipt && receipt.pending) {
-      applySelection(receipt.pending.choice);
-      showStatus('上一次送出尚待確認。請填回原本的部門與姓名，再按「重試確認這一票」。', '', false);
-    } else if (receipt && receipt.choice) {
-      applySelection(receipt.choice);
-      showStatus('此瀏覽器已保存你的投票。可以選擇另一款，再更新這一票。', '', false);
+      applySelection(receipt.pending.choices);
+      showStatus('上一次送出尚待確認。請填回原本的部門與姓名，再按「重試確認這次投票」。', '', false);
+    } else if (receipt && receipt.choices.length) {
+      applySelection(receipt.choices);
+      showStatus('此瀏覽器已保存你的投票。可以更改選擇，再按「更新我的選擇」。', '', false);
     } else updateControls();
 
     return { loadStats };
   }
 
-  return { POLL_ID, COLORS, SYMBOLISM, IDS, VoteError, normalizeIdentity, canLockIdentity, validateIdentity, normalizeStats, assertConfirmation, isConfigured, requestJSON, randomHex, identityDigest, parseReceipt, mount };
+  return { POLL_ID, MAX_CHOICES, COLORS, SYMBOLISM, IDS, VoteError, normalizeIdentity, canLockIdentity, validateIdentity, normalizeStats, assertConfirmation, isConfigured, requestJSON, randomHex, identityDigest, parseReceipt, mount };
 });

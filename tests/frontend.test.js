@@ -8,8 +8,8 @@ function stats(counts = {}) {
   const full = Object.fromEntries(vote.IDS.map(id => [id, counts[id] || 0]));
   return { ok: true, pollId: vote.POLL_ID, counts: full, total: Object.values(full).reduce((a, b) => a + b, 0) };
 }
-const payload = { pollId: vote.POLL_ID, dept: '營運部', name: '測試同事', choice: 'forgetmenot', receiptToken: 'a'.repeat(64), requestId: 'b'.repeat(32), expectedRevision: 0 };
-function confirmation() { return { ...stats({ forgetmenot: 1 }), choice: payload.choice, requestId: payload.requestId, revision: 1 }; }
+const payload = { pollId: vote.POLL_ID, dept: '營運部', name: '測試同事', choices: ['forgetmenot'], receiptToken: 'a'.repeat(64), requestId: 'b'.repeat(32), expectedRevision: 0 };
+function confirmation() { return { ...stats({ forgetmenot: 1 }), choices: payload.choices, requestId: payload.requestId, revision: 1 }; }
 
 test('name variants match while departments remain separate identities', () => {
   assert.equal(vote.normalizeIdentity('  ＤＫ   Team  ', ' 王 小明 '), vote.normalizeIdentity('dk team', '王小明'));
@@ -43,6 +43,12 @@ function mountHarness(savedReceipt, fetcher) {
   return { get, radios, submit: () => get('vote-form').handlers.submit({ preventDefault() {} }) };
 }
 
+function toggle(ui, id) {
+  const input = ui.radios.find(item => item.value === id);
+  input.checked = !input.checked;
+  input.handlers.change();
+}
+
 test('new-tab identity typo stays editable and only a verified correction is locked', async () => {
   const digest = await vote.identityDigest(webcrypto, vote.normalizeIdentity('電商營運部', '王小明'));
   let sent = 0, ui;
@@ -51,7 +57,7 @@ test('new-tab identity typo stays editable and only a verified correction is loc
     assert.equal(ui.get('department').disabled, true);
     assert.equal(ui.get('voter-name').disabled, true);
     const body = JSON.parse(options.body);
-    return { ok: true, json: async () => ({ ...stats({ forgetmenot: 1 }), choice: body.choice, requestId: body.requestId, revision: 2 }) };
+    return { ok: true, json: async () => ({ ...stats({ forgetmenot: 1 }), choices: body.choices, requestId: body.requestId, revision: 2 }) };
   });
   ui.get('department').value = '電商營運部';
   ui.get('voter-name').value = '錯誤姓名';
@@ -75,11 +81,11 @@ test('an uncertain request cannot be replayed under changed identity and preserv
     sent.push(options.body);
     if (sent.length === 1) throw new TypeError('offline after send');
     const body = JSON.parse(options.body);
-    return { ok: true, json: async () => ({ ...stats({ sakura: 1 }), choice: body.choice, requestId: body.requestId, revision: 1 }) };
+    return { ok: true, json: async () => ({ ...stats({ sakura: 1 }), choices: body.choices, requestId: body.requestId, revision: 1 }) };
   });
   ui.get('department').value = '電商營運部';
   ui.get('voter-name').value = '王小明';
-  ui.radios[0].handlers.change();
+  toggle(ui, vote.IDS[0]);
   await ui.submit();
   assert.equal(ui.get('voter-name').readOnly, true);
   ui.get('voter-name').value = '另一位同事';
@@ -94,6 +100,52 @@ test('an uncertain request cannot be replayed under changed identity and preserv
   assert.match(ui.get('vote-status').textContent, /你的票已收到/);
 });
 
+test('a third pick is refused until one of the two is cleared', () => {
+  const ui = mountHarness(null, async () => { throw new Error('picking must not touch the network'); });
+  const input = id => ui.radios.find(item => item.value === id);
+  toggle(ui, 'plum');
+  assert.match(ui.get('selection-summary').innerHTML, /冬晴 · 韌性/);
+  toggle(ui, 'sakura');
+  toggle(ui, 'daisy');
+  assert.equal(input('daisy').checked, false);
+  assert.equal(input('sakura').checked, true);
+  assert.equal(input('plum').checked, true);
+  assert.match(ui.get('selection-summary').innerHTML, /初櫻、冬晴/);
+  toggle(ui, 'plum');
+  toggle(ui, 'daisy');
+  assert.equal(input('daisy').checked, true);
+  assert.equal(input('plum').checked, false);
+  assert.match(ui.get('selection-summary').innerHTML, /初櫻、小晴/);
+});
+
+test('both picks travel in one request in a stable order and are confirmed together', async () => {
+  const sent = [];
+  const ui = mountHarness(null, async (url, options) => {
+    const body = JSON.parse(options.body);
+    sent.push(body);
+    return { ok: true, json: async () => ({ ...stats({ sakura: 1, plum: 1 }), choices: body.choices, requestId: body.requestId, revision: 1 }) };
+  });
+  ui.get('department').value = '電商營運部';
+  ui.get('voter-name').value = '王小明';
+  toggle(ui, 'plum');
+  toggle(ui, 'sakura');
+  await ui.submit();
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].choices, ['sakura', 'plum']);
+  assert.equal('choice' in sent[0], false);
+  assert.match(ui.get('vote-status').textContent, /你的票已收到：初櫻、冬晴/);
+});
+
+test('submitting with nothing picked never reaches the server', async () => {
+  let sent = 0;
+  const ui = mountHarness(null, async () => { sent++; });
+  ui.get('department').value = '電商營運部';
+  ui.get('voter-name').value = '王小明';
+  await ui.submit();
+  assert.equal(sent, 0);
+  assert.match(ui.get('vote-status').textContent, /至少選擇一款/);
+});
+
 test('receipt stores no clear-text identity and rejects unusable credentials', () => {
   const raw = JSON.stringify({ token: 'a'.repeat(64), revision: 1, choice: 'sakura', identityDigest: 'b'.repeat(64), dept: 'PRIVATE DEPARTMENT', name: 'PRIVATE NAME' });
   const parsed = vote.parseReceipt(raw);
@@ -102,6 +154,16 @@ test('receipt stores no clear-text identity and rejects unusable credentials', (
   assert.equal(parsed.dept, undefined);
   assert.equal(vote.parseReceipt(JSON.stringify({ token: 'not-random', revision: 1 })), null);
   assert.equal(vote.parseReceipt(JSON.stringify({ token: 'a'.repeat(64), revision: 0, pending: { requestId: 'x', choice: 'sakura', expectedRevision: 0 } })), null);
+});
+
+test('receipts keep two picks, still read an old single pick and reject invalid sets', () => {
+  const base = { token: 'a'.repeat(64), revision: 1 };
+  assert.deepEqual(vote.parseReceipt(JSON.stringify({ ...base, choices: ['plum', 'sakura'] })).choices, ['sakura', 'plum']);
+  assert.deepEqual(vote.parseReceipt(JSON.stringify({ ...base, choice: 'plum' })).choices, ['plum']);
+  assert.deepEqual(vote.parseReceipt(JSON.stringify(base)).choices, []);
+  const legacyPending = { requestId: 'b'.repeat(32), choice: 'daisy', expectedRevision: 1 };
+  assert.deepEqual(vote.parseReceipt(JSON.stringify({ ...base, pending: legacyPending })).pending.choices, ['daisy']);
+  for (const choices of [['sakura', 'sakura'], ['sakura', 'plum', 'daisy'], ['nope'], 'sakura']) assert.equal(vote.parseReceipt(JSON.stringify({ ...base, choices })), null);
 });
 
 test('random receipt and identity digest are deterministic only where intended', async () => {
@@ -126,7 +188,7 @@ test('stats accept zero votes but reject negative, incomplete and mismatched tot
 
 test('only the matching request and choice may be confirmed', () => {
   assert.equal(vote.assertConfirmation(confirmation(), payload).revision, 1);
-  for (const changed of [{ requestId: 'c'.repeat(32) }, { choice: 'plum' }, { revision: 0 }, { pollId: 'different' }, { total: 999 }, { ok: false }]) {
+  for (const changed of [{ requestId: 'c'.repeat(32) }, { choices: ['plum'] }, { choices: ['forgetmenot', 'plum'] }, { choices: undefined }, { revision: 0 }, { pollId: 'different' }, { total: 999 }, { ok: false }]) {
     assert.throws(() => vote.assertConfirmation({ ...confirmation(), ...changed }, payload), error => error.uncertain === true);
   }
   assert.throws(() => vote.assertConfirmation({ ...confirmation(), revision: 1 }, { ...payload, expectedRevision: 2 }));
@@ -156,7 +218,7 @@ test('confirmed JSON and server-side rejection remain distinguishable', async ()
   let request;
   const fetcher = async (url, options) => { request = options; return { ok: true, json: async () => confirmation() }; };
   const data = await vote.requestJSON('https://example.com/vote', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) }, fetcher);
-  assert.equal(vote.assertConfirmation(data, payload).choice, 'forgetmenot');
+  assert.deepEqual(vote.assertConfirmation(data, payload).choices, ['forgetmenot']);
   assert.equal(request.credentials, 'omit');
   assert.notEqual(request.mode, 'no-cors');
   assert.equal(JSON.parse(request.body).requestId, payload.requestId);
@@ -174,7 +236,7 @@ test('a timed-out POST is never treated as a failed-to-write certainty', async (
 
 test('HTTP 409 business errors preserve duplicate and revision information for the UI', async () => {
   const duplicate = { ok: false, code: 'ALREADY_VOTED', message: 'Already voted' };
-  const stale = { ok: false, code: 'STALE_REVISION', choice: 'plum', revision: 3 };
+  const stale = { ok: false, code: 'STALE_REVISION', choices: ['plum'], revision: 3 };
   for (const body of [duplicate, stale]) {
     const result = await vote.requestJSON('https://example.com/vote', { method: 'POST' }, async () => ({ ok: false, status: 409, json: async () => body }));
     assert.deepEqual(result, body);

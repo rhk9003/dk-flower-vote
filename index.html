@@ -30,7 +30,7 @@
         <h1 id="hero-title">把想說的話，<br>繡成一朵花。</h1>
         <p class="hero-description">六款花，六種想帶在身上的心意。<br>從花的形狀到背後的故事，一起選出最期待開發的下一雙。</p>
         <a class="primary-link" href="#collection">看六款花意提案 <span aria-hidden="true">↓</span></a>
-        <p class="hero-note">每位同事一票 · 請填部門與姓名</p>
+        <p class="hero-note">每位同事最多兩票 · 請填部門與姓名</p>
       </div>
       <figure class="hero-visual">
         <div class="hero-image-wrap"><img src="assets/forgetmenot.jpg" alt="相伴：霧藍鞋面與藍色勿忘我刺繡的設計示意" fetchpriority="high" width="1254" height="1254"></div>
@@ -41,7 +41,7 @@
     <section id="collection" class="collection section-shell" aria-labelledby="collection-title">
       <div class="section-intro">
         <div><p class="section-number">01 — 六款花意</p><h2 id="collection-title">選一朵，陪你走。</h2></div>
-        <p>先看設計與心意，再投下你的一票。<br>點擊鞋圖，可放大看刺繡細節。</p>
+        <p>先看設計與心意，再選出最喜歡的一到兩款。<br>點擊鞋圖，可放大看刺繡細節。</p>
       </div>
       <div id="color-grid" class="color-grid"></div>
       <noscript><p class="notice">請開啟瀏覽器 JavaScript，以查看六款提案並完成投票。</p></noscript>
@@ -52,22 +52,23 @@
       <div class="ballot-intro">
         <p class="section-number">02 — 留下你的選擇</p>
         <h2 id="ballot-title">你最希望<br>哪一款成真？</h2>
-        <p>這是內部開發意向票選。<br>一人一票，選出你最期待的花意配色。</p>
+        <p>這是內部開發意向票選。<br>每人最多兩票，選出你最期待的花意配色。</p>
         <ul class="vote-rules">
+          <li>每人最多選兩款，同一款只算一票。</li>
           <li>請填寫完整部門及姓名。</li>
           <li>可在原瀏覽器修改同一份投票。</li>
           <li>姓名與部門供內部核對，頁面只顯示總票數。</li>
         </ul>
       </div>
       <form id="vote-form" class="vote-form">
-        <div id="selection-summary" class="selection-summary" aria-live="polite"><span class="selection-kicker">你的選擇</span><strong>尚未選擇</strong><span>請先從上方六款提案中，選一款最喜歡的設計。</span></div>
+        <div id="selection-summary" class="selection-summary" aria-live="polite"><span class="selection-kicker">你的選擇</span><strong>尚未選擇</strong><span>請從上方六款提案中，選出最喜歡的一到兩款。</span></div>
         <div class="identity-fields">
           <div class="field"><label for="department">部門 <span>必填</span></label><input id="department" name="dept" type="text" maxlength="40" required autocomplete="organization-title" placeholder="例如：電商營運部" aria-describedby="identity-note"></div>
           <div class="field"><label for="voter-name">姓名 <span>必填</span></label><input id="voter-name" name="name" type="text" maxlength="40" required autocomplete="name" placeholder="請填寫全名" aria-describedby="identity-note"></div>
         </div>
         <p id="identity-note" class="field-note">部門與姓名僅用於本次內部票選核對，不會顯示在公開結果。</p>
         <p id="service-notice" class="service-notice" hidden></p>
-        <button id="submit-vote" class="submit-button" type="submit">送出我的一票 <span aria-hidden="true">↗</span></button>
+        <button id="submit-vote" class="submit-button" type="submit">送出我的選擇 <span aria-hidden="true">↗</span></button>
         <p id="vote-status" class="vote-status" role="status" aria-live="polite" tabindex="-1"></p>
         <p id="receipt-note" class="field-note" hidden>此瀏覽器已保存修改憑證。清除瀏覽資料或換裝置後，請聯絡票選負責人協助修改。</p>
       </form>
